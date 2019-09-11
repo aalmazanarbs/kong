@@ -10,6 +10,7 @@ local re_find      = ngx.re.find
 local concat       = table.concat
 local insert       = table.insert
 local format       = string.format
+local unpack       = unpack
 local assert       = assert
 local ipairs       = ipairs
 local pairs        = pairs
@@ -1955,6 +1956,87 @@ local function allow_record_fields_by_name(record, loop)
     end
   end
 end
+
+
+function Schema:get_transformations(entity)
+  local transformations = {
+    n = 0
+  }
+  local errors = {
+    n = 0
+  }
+
+  if self.transformations then
+    for _, transformation in ipairs(self.transformations) do
+      local none_set = true
+      local all_set  = true
+      for _, input in ipairs(transformation.input) do
+        if self.get_field(entity, input) then
+          none_set = false
+        else
+          all_set = false
+        end
+      end
+
+      if all_set then
+        if errors.n == 0 then
+          transformations.n = transformations.n + 1
+          transformations[transformations.n] = transformation
+        end
+
+      elseif not none_set then
+        errors.n = errors.n + 1
+        errors.n[errors.n] = transformation
+      end
+    end
+  end
+
+  if errors.n > 0 then
+    return nil, errors
+  end
+
+  return transformations
+end
+
+
+function Schema:run_transformations(transformations, entity)
+  if transformations.n > 0 then
+    for i = 1, transformations.n do
+      local transformation = transformations[i]
+      local func = transformation.func
+      local args = {}
+      local argc = 0
+      for i, input in ipairs(transformation.input) do
+        argc = i
+        args[argc] = self.get_field(entity, input)
+      end
+
+      local skip
+      if transformation.needs then
+        for _, need in ipairs(transformation.needs) do
+          argc = argc + 1
+          local value = self.get_field(entity, need)
+          if not value then
+            skip = true
+          end
+          args[argc] = value
+        end
+      end
+
+      if not skip then
+        local data, err = func(unpack(args))
+        if err then
+          return nil, err
+        end
+
+        entity = self:merge_values(data, entity)
+      end
+    end
+  end
+
+  return entity
+end
+
 
 
 --- Instatiate a new schema from a definition.

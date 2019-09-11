@@ -17,6 +17,7 @@ local next         = next
 local log          = ngx.log
 local fmt          = string.format
 local match        = string.match
+local unpack       = unpack
 
 
 local ERR          = ngx.ERR
@@ -257,6 +258,8 @@ local function check_insert(self, entity, options)
     return nil, tostring(err_t), err_t
   end
 
+  local transf, transf_errors = self.schema:get_transformations(entity)
+
   local ok, err, err_t = resolve_foreign(self, entity_to_insert)
   if not ok then
     return nil, err, err_t
@@ -266,6 +269,15 @@ local function check_insert(self, entity, options)
   if not ok then
     local err_t = self.errors:schema_violation(errors)
     return nil, tostring(err_t), err_t
+  end
+
+  if transf_errors then
+    error("transformations failed")
+  end
+
+  local ok, err, err_t = self.schema:run_transformations(transf, entity_to_insert)
+  if not ok then
+    return nil, err, err_t
   end
 
   if options ~= nil then
@@ -291,6 +303,8 @@ local function check_update(self, key, entity, options, name)
     local err_t = self.errors:schema_violation(err)
     return nil, nil, tostring(err_t), err_t
   end
+
+  local transf, transf_errors = self.schema:get_transformations(entity)
 
   local rbw_entity
   if read_before_write then
@@ -334,6 +348,12 @@ local function check_update(self, key, entity, options, name)
     return nil, nil, tostring(err_t), err_t
   end
 
+  if transf_errors then
+    error("transformations failed")
+  end
+
+  entity_to_update = self.schema:run_transformations(transf, entity_to_update)
+
   if options ~= nil then
     ok, errors = validate_options_value(options, self.schema, "update")
     if not ok then
@@ -361,6 +381,8 @@ local function check_upsert(self, entity, options, name, value)
     entity_to_upsert[name] = value
   end
 
+  local transf, transf_errors = self.schema:get_transformations(entity)
+
   local ok, err, err_t = resolve_foreign(self, entity_to_upsert)
   if not ok then
     return nil, err, err_t
@@ -375,6 +397,12 @@ local function check_upsert(self, entity, options, name, value)
   if name then
     entity_to_upsert[name] = nil
   end
+
+  if transf_errors then
+    error("transformations failed")
+  end
+
+  entity_to_upsert = self.schema:run_transformations(transf, entity_to_upsert)
 
   if options ~= nil then
     local ok, errors = validate_options_value(options, self.schema, "upsert")
